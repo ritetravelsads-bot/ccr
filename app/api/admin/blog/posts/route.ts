@@ -110,12 +110,15 @@ export async function POST(request: Request) {
       const existingPost = await collection.findOne({ slug })
       const finalSlug = existingPost ? `${slug}-${Date.now()}` : slug
 
+      // Handle category - support both string and array formats
+      const categoryValue = Array.isArray(category) ? category : (category ? [category] : ["general"])
+
       const result = await collection.insertOne({
         title,
         slug: finalSlug,
         excerpt,
         content,
-        category: category || "general",
+        category: categoryValue,
         author,
         readTime: Number.parseInt(readTime) || 5,
         read_time: Number.parseInt(readTime) || 5,

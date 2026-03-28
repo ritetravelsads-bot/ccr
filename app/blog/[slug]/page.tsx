@@ -136,7 +136,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
         {/* Content */}
         <section className="w-full py-12 md:py-16 px-4">
-          <article className="max-w-3xl mx-auto prose prose-sm md:prose-base dark:prose-invert">
+          <article className="max-w-3xl mx-auto blog-content">
             <div
               className="text-sm md:text-base leading-relaxed"
               dangerouslySetInnerHTML={{ __html: post.content }}
@@ -167,7 +167,6 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           </div>
         </section>
       </main>
-      <Footer />
     </>
   )
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,6 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import RichTextEditor from "@/components/blog/rich-text-editor"
 import TableOfContents from "@/components/blog/table-of-contents"
+import { X, Plus, Check } from "lucide-react"
+
+interface BlogCategory {
+  _id: string
+  name: string
+  slug: string
+}
 
 interface BlogPostFormProps {
   initialData?: {
@@ -17,7 +24,7 @@ interface BlogPostFormProps {
     title?: string
     excerpt?: string
     content?: string
-    category?: string
+    category?: string | string[]
     author?: string
     readTime?: string
     cover_image?: string
@@ -37,11 +44,19 @@ export default function BlogPostForm({ initialData }: BlogPostFormProps) {
   const router = useRouter()
   const isEditing = !!initialData?._id
   const [activeTab, setActiveTab] = useState("basic")
+  
+  // Parse initial categories - support both string and array formats
+  const getInitialCategories = () => {
+    if (!initialData?.category) return []
+    if (Array.isArray(initialData.category)) return initialData.category
+    return [initialData.category]
+  }
+  
   const [formData, setFormData] = useState({
     title: initialData?.title || "",
     excerpt: initialData?.excerpt || "",
     content: initialData?.content || "",
-    category: initialData?.category || "general",
+    categories: getInitialCategories(),
     author: initialData?.author || "",
     readTime: initialData?.readTime || "5",
     cover_image: initialData?.cover_image || "",
@@ -58,6 +73,32 @@ export default function BlogPostForm({ initialData }: BlogPostFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
+  
+  // Category management state
+  const [availableCategories, setAvailableCategories] = useState<BlogCategory[]>([])
+  const [loadingCategories, setLoadingCategories] = useState(true)
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
+
+  // Fetch available categories
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch("/api/admin/blog/categories")
+        if (response.ok) {
+          const data = await response.json()
+          setAvailableCategories(data.categories || [])
+        }
+      } catch (err) {
+        console.error("[v0] Error fetching categories:", err)
+      } finally {
+        setLoadingCategories(false)
+      }
+    }
+    
+    fetchCategories()
+  }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
@@ -101,6 +142,58 @@ export default function BlogPostForm({ initialData }: BlogPostFormProps) {
     }
   }
 
+  // Category management functions
+  const toggleCategory = (categoryName: string) => {
+    setFormData((prev) => {
+      const currentCategories = prev.categories
+      if (currentCategories.includes(categoryName)) {
+        return { ...prev, categories: currentCategories.filter((c) => c !== categoryName) }
+      }
+      return { ...prev, categories: [...currentCategories, categoryName] }
+    })
+  }
+
+  const removeCategory = (categoryName: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      categories: prev.categories.filter((c) => c !== categoryName),
+    }))
+  }
+
+  const addNewCategory = async () => {
+    if (!newCategoryName.trim()) return
+    
+    setAddingCategory(true)
+    setError("")
+    
+    try {
+      const response = await fetch("/api/admin/blog/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newCategoryName.trim() }),
+      })
+      
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Failed to add category")
+      }
+      
+      const data = await response.json()
+      
+      // Add to available categories and select it
+      setAvailableCategories((prev) => [...prev, data.category])
+      setFormData((prev) => ({
+        ...prev,
+        categories: [...prev.categories, data.category.name],
+      }))
+      setNewCategoryName("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add category")
+    } finally {
+      setAddingCategory(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent, publishStatus: boolean = true) => {
     e.preventDefault()
     setLoading(true)
@@ -113,6 +206,8 @@ export default function BlogPostForm({ initialData }: BlogPostFormProps) {
 
       const payload = {
         ...formData,
+        // Send categories as array for multiple selection support
+        category: formData.categories,
         tags: formData.tags.split(",").map((t) => t.trim()).filter(Boolean),
         is_published: publishStatus,
       }
@@ -192,22 +287,123 @@ export default function BlogPostForm({ initialData }: BlogPostFormProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="category" className="text-sm font-medium">
-                    Category
-                  </label>
-                  <select
-                    id="category"
-                    name="category"
-                    value={formData.category}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 border border-border rounded-md text-sm"
-                  >
-                    <option value="general">General</option>
-                    <option value="tips">Tips & Tricks</option>
-                    <option value="news">News</option>
-                    <option value="guides">Guides</option>
-                    <option value="market">Market Analysis</option>
-                  </select>
+                  <label className="text-sm font-medium">Categories</label>
+                  <div className="relative">
+                    {/* Selected categories */}
+                    <div
+                      className="min-h-[42px] w-full px-3 py-2 border border-border rounded-md bg-background cursor-pointer flex flex-wrap gap-1.5 items-center"
+                      onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                    >
+                      {formData.categories.length === 0 ? (
+                        <span className="text-sm text-muted-foreground">Select categories...</span>
+                      ) : (
+                        formData.categories.map((cat) => (
+                          <span
+                            key={cat}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs font-medium rounded-full"
+                          >
+                            {cat}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                removeCategory(cat)
+                              }}
+                              className="hover:text-primary/70"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Dropdown */}
+                    {showCategoryDropdown && (
+                      <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-64 overflow-auto">
+                        {/* Add new category input */}
+                        <div className="p-2 border-b border-border">
+                          <div className="flex gap-2">
+                            <Input
+                              type="text"
+                              placeholder="Add new category..."
+                              value={newCategoryName}
+                              onChange={(e) => setNewCategoryName(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault()
+                                  addNewCategory()
+                                }
+                              }}
+                              className="h-8 text-sm"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                addNewCategory()
+                              }}
+                              disabled={!newCategoryName.trim() || addingCategory}
+                              className="h-8 px-2"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Category list */}
+                        {loadingCategories ? (
+                          <div className="p-3 text-sm text-muted-foreground text-center">
+                            Loading categories...
+                          </div>
+                        ) : availableCategories.length === 0 ? (
+                          <div className="p-3 text-sm text-muted-foreground text-center">
+                            No categories yet. Add one above.
+                          </div>
+                        ) : (
+                          <div className="py-1">
+                            {availableCategories.map((cat) => (
+                              <button
+                                key={cat._id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleCategory(cat.name)
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between"
+                              >
+                                <span>{cat.name}</span>
+                                {formData.categories.includes(cat.name) && (
+                                  <Check className="h-4 w-4 text-primary" />
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Close button */}
+                        <div className="p-2 border-t border-border">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-8"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setShowCategoryDropdown(false)
+                            }}
+                          >
+                            Done
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Select multiple categories or add new ones. New categories will be saved for future use.
+                  </p>
                 </div>
               </div>
 

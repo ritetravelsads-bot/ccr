@@ -156,6 +156,9 @@ export async function PUT(
         }
       }
 
+      // Handle category - support both string and array formats
+      const categoryValue = Array.isArray(category) ? category : (category ? [category] : ["general"])
+
       const result = await collection.updateOne(
         { _id: existingPost._id },
         {
@@ -164,7 +167,7 @@ export async function PUT(
             slug,
             excerpt,
             content,
-            category: category || "general",
+            category: categoryValue,
             author,
             readTime: Number.parseInt(readTime) || 5,
             read_time: Number.parseInt(readTime) || 5,
